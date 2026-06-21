@@ -55,8 +55,20 @@ export default function WatchlistPage() {
 
   async function analyzeAll() {
     setAnalyzing(true);
-    await fetch("/api/analyze/all", { method: "POST" });
-    await loadData();
+    // Analyze in batches of 3 to avoid timeout
+    const symbols = watchlist.map(w => w.symbol);
+    for (let i = 0; i < symbols.length; i += 3) {
+      const batch = symbols.slice(i, i + 3);
+      try {
+        await fetch("/api/analyze/auto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbols: batch }),
+        });
+      } catch {}
+      // Refresh after each batch
+      await loadData();
+    }
     setAnalyzing(false);
   }
 
