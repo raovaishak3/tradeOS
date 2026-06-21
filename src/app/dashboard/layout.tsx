@@ -8,10 +8,12 @@ import {
   Activity,
   Shield,
   Settings,
+  Zap,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: Activity },
+  { href: "/dashboard/analyze", label: "Analyze", icon: Zap },
   { href: "/dashboard/watchlist", label: "Watchlist", icon: Target },
   { href: "/dashboard/knowledge", label: "Knowledge", icon: BookOpen },
   { href: "/dashboard/brain", label: "Brain", icon: Brain },
