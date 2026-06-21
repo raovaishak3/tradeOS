@@ -10,11 +10,13 @@ import {
   Settings,
   Zap,
   History,
+  Briefcase,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: Activity },
   { href: "/dashboard/analyze", label: "Analyze", icon: Zap },
+  { href: "/dashboard/trades", label: "Trades", icon: Briefcase },
   { href: "/dashboard/watchlist", label: "Watchlist", icon: Target },
   { href: "/dashboard/history", label: "History", icon: History },
   { href: "/dashboard/knowledge", label: "Knowledge", icon: BookOpen },
