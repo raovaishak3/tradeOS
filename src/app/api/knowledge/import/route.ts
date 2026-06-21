@@ -75,7 +75,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Update domain concept counts
-  await db.rpc("update_domain_counts").catch(() => {});
+  try {
+    await db.rpc("update_domain_counts");
+  } catch {
+    // Function may not exist yet — ignore
+  }
 
   return NextResponse.json({
     success: true,

@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 export async function createServerSupabaseClient() {
@@ -31,13 +32,12 @@ export async function createServerSupabaseClient() {
  * Use only in API routes and server actions.
  */
 export function createAdminClient() {
-  const { createClient } = require("@supabase/supabase-js");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
+
   if (!url || !key) {
     throw new Error("Missing Supabase environment variables");
   }
-  
-  return createClient(url, key);
+
+  return createSupabaseClient(url, key);
 }
