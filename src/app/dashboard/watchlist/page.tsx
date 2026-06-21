@@ -34,6 +34,7 @@ export default function WatchlistPage() {
   const [analyses, setAnalyses] = useState<Record<string, Analysis>>({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -46,11 +47,17 @@ export default function WatchlistPage() {
     const wlData = await wlRes.json();
     const anData = await anRes.json();
     setWatchlist(wlData.watchlist || []);
-    // Map analyses by symbol
     const map: Record<string, Analysis> = {};
     (anData.analyses || []).forEach((a: Analysis) => { map[a.symbol] = a; });
     setAnalyses(map);
     setLoading(false);
+  }
+
+  async function analyzeAll() {
+    setAnalyzing(true);
+    await fetch("/api/analyze/all", { method: "POST" });
+    await loadData();
+    setAnalyzing(false);
   }
 
   const selectedAnalysis = selected ? analyses[selected] : null;
@@ -62,9 +69,15 @@ export default function WatchlistPage() {
           <h1 className="text-2xl font-bold">Watchlist</h1>
           <p className="text-zinc-400 text-sm">Monitor all instruments — click for latest analysis</p>
         </div>
-        <button onClick={loadData} className="p-2 hover:bg-zinc-800 rounded-md">
-          <RefreshCw className="h-4 w-4 text-zinc-400" />
-        </button>
+        <div className="flex gap-2">
+          <button onClick={analyzeAll} disabled={analyzing}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-md text-sm font-medium">
+            {analyzing ? "Analyzing..." : "⚡ Analyze All"}
+          </button>
+          <button onClick={loadData} className="p-2 hover:bg-zinc-800 rounded-md">
+            <RefreshCw className="h-4 w-4 text-zinc-400" />
+          </button>
+        </div>
       </div>
 
       {loading ? (

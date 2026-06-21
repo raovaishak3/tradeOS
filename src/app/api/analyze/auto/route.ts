@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { ReasoningEngine } from "@/lib/engines/reasoning";
 import { MarketDataService } from "@/lib/engines/market-data";
+import { SignalGenerator } from "@/lib/engines/signal-generator";
 
 /**
  * POST /api/analyze/auto
  * 
  * Auto-analyze a symbol using live market data from EC2.
- * Body: { symbol: "EURUSD" } or { symbols: ["EURUSD", "GBPUSD"] }
+ * If confidence is high enough, generates a trade signal with entry/SL/TP.
  * 
- * Or GET /api/analyze/auto?symbol=EURUSD
+ * Body: { symbol: "EURUSD" } or { symbols: ["EURUSD", "GBPUSD"] }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
   const db = createAdminClient();
   const market = new MarketDataService();
   const engine = new ReasoningEngine(db);
+  const signals = new SignalGenerator(db);
   const results = [];
 
   for (const symbol of symbols) {
@@ -52,19 +54,33 @@ export async function POST(request: NextRequest) {
         session,
       });
 
-      // 5. Update watchlist status
+      // 5. Generate trade signal if confidence is high enough
+      let signal = null;
+      if (analysis.decision === "buy" || analysis.decision === "sell") {
+        signal = await signals.generate(
+          symbol,
+          analysis.decision,
+          analysis.confidence,
+          analysis.primary_playbook || "unknown",
+          analysis.narrative,
+          analysis.invalidation,
+          scan
+        );
+      }
+
+      // 6. Update watchlist status
       await db.from("watchlist")
         .update({
           current_bias: analysis.bias,
           current_confidence: analysis.confidence,
           current_playbook: analysis.primary_playbook,
-          market_status: analysis.decision === "buy" || analysis.decision === "sell" ? "ready" :
+          market_status: signal ? "approval" :
                         analysis.decision === "wait" ? "watch" : "no_trade",
           last_analysis_at: new Date().toISOString(),
         })
         .eq("symbol", symbol);
 
-      results.push({ symbol, analysis });
+      results.push({ symbol, analysis, signal });
     } catch (error: any) {
       results.push({ symbol, error: error.message });
     }
