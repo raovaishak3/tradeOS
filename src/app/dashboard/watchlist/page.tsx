@@ -41,8 +41,8 @@ export default function WatchlistPage() {
   async function loadData() {
     setLoading(true);
     const [wlRes, anRes] = await Promise.all([
-      fetch("/api/watchlist"),
-      fetch("/api/analyses/latest"),
+      fetch("/api/watchlist", { cache: "no-store" }),
+      fetch("/api/analyses/latest", { cache: "no-store" }),
     ]);
     const wlData = await wlRes.json();
     const anData = await anRes.json();
