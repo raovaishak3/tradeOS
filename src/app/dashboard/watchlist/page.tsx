@@ -36,7 +36,12 @@ export default function WatchlistPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    loadData(); 
+    // Poll every 30 seconds
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   async function loadData() {
     setLoading(true);
