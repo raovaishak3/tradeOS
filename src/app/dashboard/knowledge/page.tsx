@@ -105,8 +105,8 @@ export default async function KnowledgePage() {
       {/* Concepts List */}
       <div>
         <h2 className="font-semibold mb-3">All Concepts</h2>
-        <div className="bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-800 overflow-x-auto">
+          <table className="w-full text-sm min-w-[600px]">
             <thead className="bg-zinc-800/50">
               <tr>
                 <th className="text-left p-3 text-zinc-400 font-medium">ID</th>
