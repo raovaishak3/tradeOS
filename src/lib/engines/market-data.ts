@@ -42,8 +42,48 @@ export class MarketDataService {
 
   async scanSymbol(symbol: string): Promise<MarketScan | null> {
     try {
-      const res = await fetch(`${this.baseUrl}/scan/${symbol}`, { 
-        next: { revalidate: 60 } // Cache for 60 seconds
+      // Try new structure endpoint first
+      const structRes = await fetch(`${this.baseUrl}/structure/${symbol}?period=1d`, {
+        next: { revalidate: 60 }
+      });
+      const structData = await structRes.json();
+      
+      if (structData.structure) {
+        // Return structure data as MarketScan-compatible format
+        const s = structData.structure;
+        return {
+          close: s.price || 0,
+          open: s.price || 0,
+          high: s.liquidity?.bsl || s.price || 0,
+          low: s.liquidity?.ssl || s.price || 0,
+          change: 0,
+          change_abs: 0,
+          "Recommend.All": 0,
+          "Recommend.MA": 0,
+          RSI: 50,
+          ADX: s.trend === "bullish" || s.trend === "bearish" ? 30 : 15,
+          ATR: s.atr || 0,
+          "MACD.macd": 0,
+          "MACD.signal": 0,
+          SMA20: s.price || 0,
+          SMA50: s.price || 0,
+          SMA200: s.price || 0,
+          EMA20: s.price || 0,
+          EMA50: s.price || 0,
+          EMA200: s.price || 0,
+          "Volatility.D": 0,
+          "Perf.W": 0,
+          "Perf.1M": 0,
+          "High.1M": s.liquidity?.bsl || s.price || 0,
+          "Low.1M": s.liquidity?.ssl || s.price || 0,
+          // Extra structure fields
+          _structure: s,
+        } as any;
+      }
+      
+      // Fallback to old scan endpoint
+      const res = await fetch(`${this.baseUrl}/scan/${symbol}`, {
+        next: { revalidate: 60 }
       });
       const data = await res.json();
       return data.scan || null;
@@ -68,54 +108,82 @@ export class MarketDataService {
    * Convert raw scan data into the format the Reasoning Engine expects.
    */
   interpretForReasoning(symbol: string, scan: MarketScan) {
+    // Check if we have real structure data
+    const s = (scan as any)._structure;
+    
+    if (s) {
+      // We have real candle-based structure detection
+      const trend = s.trend || "neutral";
+      const bos = s.bos ? `${s.bos.type} at ${s.bos.level}` : "None detected";
+      const choch = s.choch ? `${s.choch.type} at ${s.choch.level}` : "None";
+      const ob = s.order_block ? `${s.order_block.type} zone ${s.order_block.low}-${s.order_block.high}` : "None active";
+      const fvg = s.fvg ? `${s.fvg.type} zone ${s.fvg.bottom}-${s.fvg.top}` : "None";
+      const liq = s.liquidity || {};
+      const zone = s.zone || "equilibrium";
+      const displacement = s.displacement ? "YES — strong displacement detected" : "No displacement";
+      const swings = s.swings || {};
+      const recentHighs = (swings.highs || []).map((h: any) => h.price).join(", ");
+      const recentLows = (swings.lows || []).map((l: any) => l.price).join(", ");
+
+      return {
+        Weekly: {
+          bias: trend.includes("bull") ? "bullish" : trend.includes("bear") ? "bearish" : "neutral",
+          structure: `Trend: ${trend}. BOS: ${bos}. CHOCH: ${choch}.`,
+          liquidity: `BSL: ${liq.bsl || "unknown"}. SSL: ${liq.ssl || "unknown"}. Equal Highs: ${(liq.equal_highs || []).join(", ") || "none"}. Equal Lows: ${(liq.equal_lows || []).join(", ") || "none"}.`,
+          key_levels: `Swing Highs: ${recentHighs}. Swing Lows: ${recentLows}. ATR: ${s.atr}`,
+          notes: `Zone: ${zone}. Price position in range: ${s.price_position}`,
+        },
+        Daily: {
+          bias: trend.includes("bull") ? "bullish" : trend.includes("bear") ? "bearish" : "neutral",
+          structure: `${trend} structure. BOS: ${bos}. CHOCH: ${choch}. Displacement: ${displacement}.`,
+          liquidity: `BSL at ${liq.bsl}. SSL at ${liq.ssl}. Price in ${zone}.`,
+          key_levels: `Recent Swing Highs: ${recentHighs}. Swing Lows: ${recentLows}.`,
+          notes: `Order Block: ${ob}. FVG: ${fvg}.`,
+        },
+        "4H": {
+          bias: trend.includes("bull") ? "bullish" : trend.includes("bear") ? "bearish" : "neutral",
+          structure: `Following daily ${trend} trend. BOS/CHOCH status from daily applies.`,
+          liquidity: `ATR: ${s.atr}. Looking for sweep of ${trend.includes("bear") ? "BSL at " + liq.bsl : "SSL at " + liq.ssl}`,
+          key_levels: `Key levels from daily structure`,
+          notes: `Displacement: ${displacement}. OB: ${ob}.`,
+        },
+        "1H": {
+          bias: "derived from higher timeframes",
+          structure: `Monitoring for confirmation. Need CHOCH/BOS on this timeframe for entry.`,
+          liquidity: `Internal liquidity around recent swings`,
+          key_levels: `ATR: ${s.atr}`,
+          notes: `Waiting for confirmation signal`,
+        },
+        "15M": {
+          bias: "execution timeframe",
+          structure: `Entry confirmation needed: CHOCH + displacement + retest of AOI`,
+          liquidity: `Minor equal highs/lows for inducement`,
+          key_levels: "",
+          notes: `Only valid after 1H confirms`,
+        },
+      };
+    }
+
+    // Fallback: old indicator-based interpretation
     const price = scan.close;
     const sma50 = scan.SMA50;
     const sma200 = scan.SMA200;
-    const rsi = scan.RSI;
-    const adx = scan.ADX;
     const atr = scan.ATR;
-    const recommend = scan["Recommend.All"];
-    const perfW = scan["Perf.W"];
-    const perfM = scan["Perf.1M"];
     const high1M = scan["High.1M"];
     const low1M = scan["Low.1M"];
-    const macd = scan["MACD.macd"];
-    const macdSignal = scan["MACD.signal"];
-    const volatility = scan["Volatility.D"];
 
-    // Determine bias from structure
     const aboveSMA200 = price > sma200;
     const aboveSMA50 = price > sma50;
     let weeklyBias = "neutral";
     if (aboveSMA200 && aboveSMA50) weeklyBias = "bullish";
     else if (!aboveSMA200 && !aboveSMA50) weeklyBias = "bearish";
 
-    // Determine structure from price action
-    let structure = "ranging";
-    if (adx > 25 && aboveSMA50) structure = "bullish BOS likely, trending";
-    else if (adx > 25 && !aboveSMA50) structure = "bearish BOS likely, trending";
-    else if (adx < 20) structure = "ranging, compression possible";
-
-    // Determine liquidity from monthly range
-    const rangeSize = high1M - low1M;
-    const priceInRange = (price - low1M) / rangeSize;
-    let liquidity = "";
-    if (priceInRange > 0.7) liquidity = `BSL above at ${high1M.toFixed(5)}, price in premium`;
-    else if (priceInRange < 0.3) liquidity = `SSL below at ${low1M.toFixed(5)}, price in discount`;
-    else liquidity = `Mid-range. BSL: ${high1M.toFixed(5)}, SSL: ${low1M.toFixed(5)}`;
-
-    // Key levels
-    const keyLevels = `SMA50: ${sma50.toFixed(5)}, SMA200: ${sma200.toFixed(5)}, 1M High: ${high1M.toFixed(5)}, 1M Low: ${low1M.toFixed(5)}`;
-
-    // Notes
-    const notes = `RSI: ${rsi.toFixed(1)}, ADX: ${adx.toFixed(1)}, ATR: ${atr.toFixed(5)}, MACD: ${macd > macdSignal ? "bullish" : "bearish"}, Week: ${perfW > 0 ? "+" : ""}${perfW.toFixed(2)}%, Month: ${perfM > 0 ? "+" : ""}${perfM.toFixed(2)}%`;
-
     return {
-      Weekly: { bias: weeklyBias, structure, liquidity, key_levels: keyLevels, notes },
-      Daily: { bias: weeklyBias, structure: `Price ${aboveSMA50 ? "above" : "below"} SMA50`, liquidity, key_levels: keyLevels, notes: `Volatility: ${(volatility * 100).toFixed(2)}%` },
-      "4H": { bias: recommend > 0.1 ? "bullish" : recommend < -0.1 ? "bearish" : "neutral", structure: `ADX: ${adx.toFixed(1)} — ${adx > 25 ? "trending" : "ranging"}`, liquidity, key_levels: keyLevels, notes },
-      "1H": { bias: "derived from 4H", structure: "See 4H analysis", liquidity: "Internal levels from ATR", key_levels: `ATR range: ${atr.toFixed(5)}`, notes: "" },
-      "15M": { bias: "execution timeframe", structure: "Awaiting confirmation", liquidity: "Minor equal highs/lows", key_levels: "", notes: "" },
+      Weekly: { bias: weeklyBias, structure: "Indicator-based only", liquidity: `High: ${high1M}, Low: ${low1M}`, key_levels: `SMA50: ${sma50}, SMA200: ${sma200}`, notes: "Limited data — candle structure unavailable" },
+      Daily: { bias: weeklyBias, structure: "See weekly", liquidity: "See weekly", key_levels: "", notes: "" },
+      "4H": { bias: "neutral", structure: "No candle data", liquidity: "", key_levels: "", notes: "" },
+      "1H": { bias: "neutral", structure: "No candle data", liquidity: "", key_levels: "", notes: "" },
+      "15M": { bias: "neutral", structure: "No candle data", liquidity: "", key_levels: "", notes: "" },
     };
   }
 }
